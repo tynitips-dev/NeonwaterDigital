@@ -1,0 +1,17 @@
+{
+  "name": "neonwater-client-portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --experimental-strip-types --test tests/domain.test.ts",
+    "test:rules": "node --test tests/firestore.test.mjs",
+    "account": "node bin/account.mjs"
+  },
+  "dependencies": { "firebase": "12.19.0" },
+  "devDependencies": { "@firebase/rules-unit-testing": "^5.0.0", "firebase-admin": "^13.0.0", "typescript": "~5.9.3", "vite": "8.3.5" },
+  "engines": { "node": ">=22.12" }
+}

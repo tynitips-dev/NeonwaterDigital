@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function admin() { return signedIn() && request.auth.token.get('admin', false) == true; }
+    function project(pid) { return get(/databases/$(database)/documents/projects/$(pid)).data; }
+    function client(pid) { return signedIn() && project(pid).clientUid == request.auth.uid; }
+    function access(pid) { return admin() || client(pid); }
+    function text(s, max) { return s is string && s.size() <= max; }
+    function validProject(d) {
+      return d.keys().hasOnly(['title','clientUid','clientName','summary','currentVersionId','createdAt','updatedAt'])
+        && text(d.title,160) && d.title.size()>0 && text(d.clientUid,128) && d.clientUid.size()>0
+        && text(d.clientName,120) && d.clientName.size()>0 && text(d.summary,4000)
+        && text(d.currentVersionId,128) && d.createdAt is timestamp && d.updatedAt == request.time;
+    }
+    match /projects/{pid} {
+      allow read: if admin() || (signedIn() && resource.data.clientUid == request.auth.uid);
+      allow create: if admin() && validProject(request.resource.data) && request.resource.data.createdAt == request.time && request.resource.data.currentVersionId == '';
+      allow update: if admin() && validProject(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.clientUid == resource.data.clientUid
+        && request.resource.data.currentVersionId != ''
+        && getAfter(/databases/$(database)/documents/projects/$(pid)/versions/$(request.resource.data.currentVersionId)).data.published == true;
+      allow delete: if false;
+      match /versions/{vid} {
+        allow read: if admin() || (client(pid) && resource.data.published == true);
+        allow create: if admin()
+          && request.resource.data.keys().hasOnly(['label','description','previewUrl','screenshotUrl','published','createdAt'])
+          && text(request.resource.data.label,160) && request.resource.data.label.size()>0
+          && text(request.resource.data.description,4000)
+          && text(request.resource.data.previewUrl,2048) && request.resource.data.previewUrl.matches('https://[^@]+')
+          && text(request.resource.data.screenshotUrl,2048)
+          && (request.resource.data.screenshotUrl == '' || request.resource.data.screenshotUrl.matches('https://[^@]+'))
+          && request.resource.data.published == true && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+      match /reviews/{rid} {
+        allow read: if access(pid);
+        allow create: if client(pid)
+          && request.resource.data.keys().hasOnly(['versionId','authorUid','authorName','decision','note','createdAt'])
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.authorName == request.auth.token.email
+          && request.resource.data.versionId == project(pid).currentVersionId
+          && get(/databases/$(database)/documents/projects/$(pid)/versions/$(request.resource.data.versionId)).data.published == true
+          && request.resource.data.decision in ['approved','changes_requested']
+          && text(request.resource.data.note,5000)
+          && (request.resource.data.decision == 'approved' || request.resource.data.note.size()>0)
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
